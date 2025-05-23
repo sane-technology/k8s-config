@@ -1,0 +1,8 @@
+[package]
+name = "k8s-config"
+version = "0.1.0"
+edition = "2024"
+authors = ["Alexander Strickner"]
+
+[dependencies]
+thiserror = "2"
