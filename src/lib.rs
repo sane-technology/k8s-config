@@ -1,9 +1,9 @@
 use std::{
-    cell::RefCell,
     fs::File,
     io::Read,
     path::PathBuf,
     str::FromStr,
+    sync::RwLock,
     time::{Duration, Instant},
 };
 
@@ -11,9 +11,9 @@ const INITIAL_READ_BUFFER_CAPACITY: usize = 128;
 
 pub struct FileSource<T: FromStr + Clone, const REQUIRED: bool> {
     filepath: PathBuf,
-    value: RefCell<Option<T>>,
+    value: RwLock<Option<T>>,
     refresh_interval: Option<Duration>,
-    last_refresh: RefCell<Option<Instant>>,
+    last_refresh: RwLock<Option<Instant>>,
     auto_trim: bool,
 }
 
@@ -38,9 +38,9 @@ impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone, const REQUIRED: bool>
         Self {
             filepath,
             auto_trim: true,
-            value: RefCell::new(None),
+            value: RwLock::new(None),
             refresh_interval: None,
-            last_refresh: RefCell::new(None),
+            last_refresh: RwLock::new(None),
         }
     }
 
@@ -55,12 +55,23 @@ impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone, const REQUIRED: bool>
     }
 
     fn set_value(&self, value: Option<T>) -> () {
-        *self.value.borrow_mut() = value;
-        *self.last_refresh.borrow_mut() = Some(Instant::now());
+        *self
+            .value
+            .write()
+            .expect("error locking value for FileSource") = value;
+        *self
+            .last_refresh
+            .write()
+            .expect("error getting mutable ref to last_refresh in FileSource") =
+            Some(Instant::now());
     }
 
     pub fn refresh_on_timeout(&self) -> Result<(), RefreshFileSourceError<E>> {
-        let last_refresh = self.last_refresh.borrow().to_owned();
+        let last_refresh = self
+            .last_refresh
+            .read()
+            .expect("error reading last_refresh in FileSource")
+            .to_owned();
         if last_refresh.is_none_or(|last_refresh| {
             self.refresh_interval
                 .is_some_and(|refresh_interval| (last_refresh + refresh_interval) < Instant::now())
@@ -111,7 +122,12 @@ pub enum ValueError<E: std::fmt::Debug> {
 impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone> ValueSource<T, E> for FileSource<T, true> {
     fn value(&self) -> Result<T, ValueError<E>> {
         self.refresh_on_timeout()?;
-        Ok(self.value.borrow().to_owned().ok_or(ValueError::NoValue)?)
+        Ok(self
+            .value
+            .read()
+            .expect("error reading value in FileSource")
+            .to_owned()
+            .ok_or(ValueError::NoValue)?)
     }
 }
 
@@ -120,7 +136,11 @@ impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone> ValueSource<Option<T>, E>
 {
     fn value(&self) -> Result<Option<T>, ValueError<E>> {
         self.refresh_on_timeout()?;
-        Ok(self.value.borrow().to_owned())
+        Ok(self
+            .value
+            .read()
+            .expect("error reading value in FileSource")
+            .to_owned())
     }
 }
 
