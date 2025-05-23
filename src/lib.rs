@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn simple_required() {
-        let mut source: FileSource<String, true> =
+        let source: FileSource<String, true> =
             FileSource::from_path("sources/test-required".into());
 
         assert_eq!(source.value().unwrap(), "hello world!");
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn simple_optional_given() {
-        let mut source: FileSource<String, false> =
+        let source: FileSource<String, false> =
             FileSource::from_path("sources/test-optional".into());
 
         assert_eq!(
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn simple_optional_missing() {
-        let mut source: FileSource<String, false> =
+        let source: FileSource<String, false> =
             FileSource::from_path("sources/test-optional-missing".into());
 
         assert_eq!(source.value().unwrap(), None);
