@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     fs::File,
     io::Read,
     path::PathBuf,
@@ -10,14 +11,14 @@ const INITIAL_READ_BUFFER_CAPACITY: usize = 128;
 
 pub struct FileSource<T: FromStr + Clone, const REQUIRED: bool> {
     filepath: PathBuf,
-    value: Option<T>,
+    value: RefCell<Option<T>>,
     refresh_interval: Option<Duration>,
-    last_refresh: Option<Instant>,
+    last_refresh: RefCell<Option<Instant>>,
     auto_trim: bool,
 }
 
 pub trait ValueSource<T, E: std::fmt::Debug> {
-    fn value(&mut self) -> Result<T, ValueError<E>>;
+    fn value(&self) -> Result<T, ValueError<E>>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -37,9 +38,9 @@ impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone, const REQUIRED: bool>
         Self {
             filepath,
             auto_trim: true,
-            value: None,
+            value: RefCell::new(None),
             refresh_interval: None,
-            last_refresh: None,
+            last_refresh: RefCell::new(None),
         }
     }
 
@@ -53,13 +54,14 @@ impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone, const REQUIRED: bool>
         self
     }
 
-    fn set_value(&mut self, value: Option<T>) -> () {
-        self.value = value;
-        self.last_refresh = Some(Instant::now());
+    fn set_value(&self, value: Option<T>) -> () {
+        *self.value.borrow_mut() = value;
+        *self.last_refresh.borrow_mut() = Some(Instant::now());
     }
 
-    pub fn refresh_on_timeout(&mut self) -> Result<(), RefreshFileSourceError<E>> {
-        if self.last_refresh.is_none_or(|last_refresh| {
+    pub fn refresh_on_timeout(&self) -> Result<(), RefreshFileSourceError<E>> {
+        let last_refresh = self.last_refresh.borrow().to_owned();
+        if last_refresh.is_none_or(|last_refresh| {
             self.refresh_interval
                 .is_some_and(|refresh_interval| (last_refresh + refresh_interval) < Instant::now())
         }) {
@@ -69,7 +71,7 @@ impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone, const REQUIRED: bool>
         Ok(())
     }
 
-    pub fn refresh_value(&mut self) -> Result<(), RefreshFileSourceError<E>> {
+    pub fn refresh_value(&self) -> Result<(), RefreshFileSourceError<E>> {
         if !self.filepath.exists() {
             if REQUIRED {
                 return Err(RefreshFileSourceError::NoValue);
@@ -107,18 +109,18 @@ pub enum ValueError<E: std::fmt::Debug> {
 }
 
 impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone> ValueSource<T, E> for FileSource<T, true> {
-    fn value(&mut self) -> Result<T, ValueError<E>> {
+    fn value(&self) -> Result<T, ValueError<E>> {
         self.refresh_on_timeout()?;
-        Ok(self.value.clone().ok_or(ValueError::NoValue)?)
+        Ok(self.value.borrow().to_owned().ok_or(ValueError::NoValue)?)
     }
 }
 
 impl<E: std::fmt::Debug, T: FromStr<Err = E> + Clone> ValueSource<Option<T>, E>
     for FileSource<T, false>
 {
-    fn value(&mut self) -> Result<Option<T>, ValueError<E>> {
+    fn value(&self) -> Result<Option<T>, ValueError<E>> {
         self.refresh_on_timeout()?;
-        Ok(self.value.clone())
+        Ok(self.value.borrow().to_owned())
     }
 }
 
